@@ -10,8 +10,8 @@ its source lives in the separate host repo **`outcast1000/viboplr`** (likely not
 checked out on this machine). This repo contains only the TIDAL plugin and ships
 it as a versioned release that the host app downloads and auto-updates.
 
-- **Plugin id:** `tidal-browse` (set in `manifest.json`). An installed copy with
-  this id overrides the app's bundled built-in copy of the same id.
+- **Plugin id:** `tidal-browse` (set in `manifest.json`). The plugin is installed
+  from the Viboplr plugin gallery (it is not bundled in the app).
 - **What it does:** search, stream, and download from TIDAL. It talks to TIDAL
   over HTTP through the host's `api.network.fetch` (which proxies through Rust to
   bypass CORS). It needs **no** native/Rust backend support — all logic is in JS.
@@ -48,7 +48,7 @@ The host runs `index.js` as the body of `new Function("api", "window", "globalTh
 - **No browser/Tauri dev harness exists** for plugins. The realistic dev loop is to
   install/symlink this folder into the host app and reload. See `DEVELOPING.md`.
 
-## How to release (this is the canonical source; the host bundles a baseline copy)
+## How to release
 
 See `README.md` → *Develop & Release*. In short:
 1. Edit `index.js` / `manifest.json`; **bump the version** (`scripts/bump.sh patch|minor|major`).
@@ -56,9 +56,6 @@ See `README.md` → *Develop & Release*. In short:
 3. Push a tag `vX.Y.Z` (or run the *Release* GitHub Action manually) — CI builds
    `tidal.zip` + `update.json` and publishes the release. The host checks the
    permanent `releases/latest/download/update.json` every 24h.
-4. The host app also bundles a baseline copy at `src-tauri/plugins/tidal-browse/`;
-   after a release, sync `index.js` + `manifest.json` back into that host folder so
-   fresh installs ship the latest baseline.
 
 ## Docs in this repo
 

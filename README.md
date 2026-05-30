@@ -3,8 +3,8 @@
 Search, stream, and download from TIDAL inside Viboplr. Talks to TIDAL over HTTP
 via the host's `api.network.fetch` (no native backend support required).
 
-Plugin id: `tidal-browse` (so an installed copy overrides the app's bundled
-built-in of the same id).
+Plugin id: `tidal-browse` (installed from the Viboplr plugin gallery; it is not
+bundled in the app).
 
 ## Install
 
@@ -43,11 +43,5 @@ then release.
 
 The update endpoint is the permanent
 `https://github.com/outcast1000/viboplr-tidal/releases/latest/download/update.json`.
-
-## Keep the app's bundled copy in sync
-
-The Viboplr app bundles a baseline copy at `src-tauri/plugins/tidal-browse/`.
-On each release, copy `index.js` + `manifest.json` back into that folder so new
-installs ship the latest baseline.
 
 See `DEVELOPING.md` for the plugin develop/debug workflow.
