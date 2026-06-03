@@ -302,8 +302,15 @@ function activate(api) {
     throw lastError || new Error("All TIDAL instances failed");
   }
 
-  async function tidalGetStreamUrl(trackId, quality) {
-    if (state.mockMode) return mockStreamUrl(trackId);
+  // Fetch and decode a TIDAL stream manifest. Returns { url, mimeType } or null.
+  // mimeType is the BTS manifest's container type (e.g. "audio/mp4",
+  // "audio/flac") — TIDAL may wrap FLAC in an MP4 container, so the codec alone
+  // doesn't determine the file's container.
+  async function tidalGetStream(trackId, quality) {
+    if (state.mockMode) {
+      var mockUrl = mockStreamUrl(trackId);
+      return mockUrl ? { url: mockUrl, mimeType: null } : null;
+    }
     var json = await tidalFetch("/track/?id=" + trackId + "&quality=" + (quality || "LOSSLESS"));
     var data = json.data || json;
     var manifest = data.manifest || "";
@@ -314,11 +321,37 @@ function activate(api) {
       var decoded = atob(manifest);
       var parsed = JSON.parse(decoded);
       var urls = parsed.urls || [];
-      return urls[0] || null;
+      var url = urls[0] || null;
+      if (!url) return null;
+      return { url: url, mimeType: parsed.mimeType || null };
     } catch (e) {
       console.error("Failed to decode TIDAL stream manifest:", e);
       return null;
     }
+  }
+
+  // Back-compat wrapper used by the playback resolver, which only needs the URL.
+  async function tidalGetStreamUrl(trackId, quality) {
+    var stream = await tidalGetStream(trackId, quality);
+    return stream ? stream.url : null;
+  }
+
+  // Map a stream manifest's container mimeType to the file extension to save as.
+  // Returns null when unknown so the caller can fall back to a codec-based guess.
+  function extFromMimeType(mimeType) {
+    if (!mimeType) return null;
+    var m = mimeType.toLowerCase();
+    if (m.indexOf("flac") !== -1) return "flac";
+    if (m.indexOf("mp4") !== -1 || m.indexOf("m4a") !== -1 || m.indexOf("aac") !== -1) return "m4a";
+    if (m.indexOf("mpeg") !== -1 || m.indexOf("mp3") !== -1) return "mp3";
+    return null;
+  }
+
+  // The honest extension for a downloaded TIDAL stream: prefer the container the
+  // manifest actually declares (TIDAL sometimes wraps FLAC in MP4), falling back
+  // to the requested format's natural container.
+  function downloadExt(format, mimeType) {
+    return extFromMimeType(mimeType) || (format === "flac" ? "flac" : "m4a");
   }
 
   async function tidalGetTrackInfo(trackId) {
@@ -1260,9 +1293,11 @@ function activate(api) {
   // -- Download provider --
 
   api.downloads.onGetQualities("tidal-download", function() {
+    // AAC 320 is the default (first) — smaller files that play everywhere.
+    // FLAC lossless is offered for those who want it.
     return [
-      { value: "flac", label: "FLAC (Lossless)" },
       { value: "aac", label: "AAC (320kbps)" },
+      { value: "flac", label: "FLAC (Lossless)" },
     ];
   });
 
@@ -1273,9 +1308,9 @@ function activate(api) {
     var trackId = uri.substring(8);
     if (!trackId) return null;
     try {
-      var streamUrl = await tidalGetStreamUrl(trackId, quality);
-      if (streamUrl) {
-        return { url: streamUrl, headers: null, metadata: null };
+      var stream = await tidalGetStream(trackId, quality);
+      if (stream && stream.url) {
+        return { url: stream.url, headers: null, metadata: null, ext: downloadExt(format, stream.mimeType) };
       }
     } catch (e) {
       console.error("TIDAL download URI resolve failed:", e);
@@ -1293,11 +1328,12 @@ function activate(api) {
       var tracks = results && results.tracks;
       if (!tracks || !tracks.length) return null;
       var track = tracks[0];
-      var url = await tidalGetStreamUrl(track.tidal_id, quality);
-      if (!url) return null;
+      var stream = await tidalGetStream(track.tidal_id, quality);
+      if (!stream || !stream.url) return null;
       return {
-        url: url,
+        url: stream.url,
         headers: null,
+        ext: downloadExt(format, stream.mimeType),
         metadata: {
           title: track.title,
           artist: track.artist_name,
@@ -1334,8 +1370,8 @@ function activate(api) {
     // matchId may be a bare TIDAL id (from interactive search) or a full
     // tidal:// uri (from the batch/confirmed download flow). Normalize to the id.
     var trackId = matchId.indexOf("tidal://") === 0 ? matchId.substring(8) : matchId;
-    var streamUrl = await tidalGetStreamUrl(trackId, quality);
-    if (!streamUrl) throw new Error("Failed to resolve TIDAL stream URL");
+    var stream = await tidalGetStream(trackId, quality);
+    if (!stream || !stream.url) throw new Error("Failed to resolve TIDAL stream URL");
     var info = null;
     try { info = await tidalGetTrackInfo(trackId); } catch(e) { console.error("Failed to enrich TIDAL interactive resolve metadata:", e); }
     var trackCoverUrl = null;
@@ -1343,8 +1379,9 @@ function activate(api) {
       trackCoverUrl = coverUrl(info.cover_id, 1280);
     }
     return {
-      url: streamUrl,
+      url: stream.url,
       headers: null,
+      ext: downloadExt(format, stream.mimeType),
       metadata: {
         title: info ? (info.title || undefined) : undefined,
         artist: info ? (info.artist_name || undefined) : undefined,
