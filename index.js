@@ -22,54 +22,7 @@ function activate(api) {
     apiDown: true,
     streamingDown: true,
     lastHealthCheck: null,
-    mockMode: false,
   };
-
-  // -- Mock mode data --
-
-  var MOCK_TRACKS = [
-    { tidal_id: "mock-1", title: "Bohemian Rhapsody", artist_name: "Queen", artist_id: "m-a1", album_title: "A Night at the Opera", album_id: "m-al1", cover_id: null, duration_secs: 354, track_number: 1 },
-    { tidal_id: "mock-2", title: "Stairway to Heaven", artist_name: "Led Zeppelin", artist_id: "m-a2", album_title: "Led Zeppelin IV", album_id: "m-al2", cover_id: null, duration_secs: 482, track_number: 4 },
-    { tidal_id: "mock-3", title: "Hotel California", artist_name: "Eagles", artist_id: "m-a3", album_title: "Hotel California", album_id: "m-al3", cover_id: null, duration_secs: 391, track_number: 1 },
-    { tidal_id: "mock-4", title: "Comfortably Numb", artist_name: "Pink Floyd", artist_id: "m-a4", album_title: "The Wall", album_id: "m-al4", cover_id: null, duration_secs: 382, track_number: 6 },
-    { tidal_id: "mock-5", title: "Imagine", artist_name: "John Lennon", artist_id: "m-a5", album_title: "Imagine", album_id: "m-al5", cover_id: null, duration_secs: 187, track_number: 1 },
-  ];
-
-  var MOCK_ARTISTS = [
-    { tidal_id: "m-a1", name: "Queen", picture_id: null },
-    { tidal_id: "m-a2", name: "Led Zeppelin", picture_id: null },
-    { tidal_id: "m-a3", name: "Eagles", picture_id: null },
-  ];
-
-  var MOCK_ALBUMS = [
-    { tidal_id: "m-al1", title: "A Night at the Opera", artist_name: "Queen", cover_id: null, year: 1975 },
-    { tidal_id: "m-al2", title: "Led Zeppelin IV", artist_name: "Led Zeppelin", cover_id: null, year: 1971 },
-    { tidal_id: "m-al3", title: "Hotel California", artist_name: "Eagles", cover_id: null, year: 1976 },
-  ];
-
-  function mockSearch(query) {
-    var q = (query || "").toLowerCase();
-    var tracks = MOCK_TRACKS.filter(function (t) {
-      return t.title.toLowerCase().indexOf(q) >= 0 || t.artist_name.toLowerCase().indexOf(q) >= 0;
-    });
-    var artists = MOCK_ARTISTS.filter(function (a) {
-      return a.name.toLowerCase().indexOf(q) >= 0;
-    });
-    var albums = MOCK_ALBUMS.filter(function (a) {
-      return a.title.toLowerCase().indexOf(q) >= 0 || a.artist_name.toLowerCase().indexOf(q) >= 0;
-    });
-    if (tracks.length === 0 && artists.length === 0 && albums.length === 0) {
-      tracks = MOCK_TRACKS.slice(0, 3);
-    }
-    return { tracks: tracks, artists: artists, albums: albums };
-  }
-
-  function mockStreamUrl(trackId) {
-    var track = MOCK_TRACKS.find(function (t) { return t.tidal_id === trackId; });
-    if (!track) return "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
-    var idx = MOCK_TRACKS.indexOf(track) + 1;
-    return "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-" + idx + ".mp3";
-  }
 
   // -- TIDAL HTTP client --
 
@@ -210,16 +163,6 @@ function activate(api) {
   }
 
   async function fetchInstances() {
-    if (state.mockMode) {
-      state.lastHealthCheck = Date.now();
-      instanceCache = {
-        apiInstances: [{ url: "mock://tidal", version: "mock" }],
-        streamingInstances: [{ url: "mock://tidal", version: "mock" }],
-        fetchedAt: Date.now(),
-      };
-      updateHealthState(true, true);
-      return;
-    }
     var candidates = await fetchInstanceCandidates();
     var apiInstances = await probeInstances(candidates.apiInstances, "api");
     var streamingCandidates = candidates.streamingInstances.length > 0 ? candidates.streamingInstances : candidates.apiInstances;
@@ -307,10 +250,6 @@ function activate(api) {
   // "audio/flac") — TIDAL may wrap FLAC in an MP4 container, so the codec alone
   // doesn't determine the file's container.
   async function tidalGetStream(trackId, quality) {
-    if (state.mockMode) {
-      var mockUrl = mockStreamUrl(trackId);
-      return mockUrl ? { url: mockUrl, mimeType: null } : null;
-    }
     var json = await tidalFetch("/track/?id=" + trackId + "&quality=" + (quality || "LOSSLESS"));
     var data = json.data || json;
     var manifest = data.manifest || "";
@@ -399,7 +338,6 @@ function activate(api) {
   }
 
   async function tidalSearch(query, limit, offset) {
-    if (state.mockMode) return mockSearch(query);
     var encoded = encodeURIComponent(query);
     var trackPath = "/search/?s=" + encoded + "&limit=" + limit + "&offset=" + (offset || 0);
     var artistPath = "/search/?a=" + encoded + "&limit=" + limit + "&offset=" + (offset || 0);
@@ -469,7 +407,6 @@ function activate(api) {
   }
 
   async function tidalCheckStatus() {
-    if (state.mockMode) return { available: true, instance_count: 1 };
     try {
       var instances = await getApiInstances();
       return { available: instances.length > 0, instance_count: instances.length };
@@ -801,9 +738,7 @@ function activate(api) {
 
   function renderSettings() {
     var serverStatus = "";
-    if (state.mockMode) {
-      serverStatus = "Mock mode — using fake data";
-    } else if (!state.apiDown && !state.streamingDown) {
+    if (!state.apiDown && !state.streamingDown) {
       var count = instanceCache ? instanceCache.apiInstances.length : 0;
       serverStatus = count + " server" + (count !== 1 ? "s" : "") + " online";
     } else if (state.apiDown && state.streamingDown) {
@@ -813,7 +748,7 @@ function activate(api) {
     } else {
       serverStatus = "API down, streaming online";
     }
-    if (!state.mockMode && state.lastHealthCheck) {
+    if (state.lastHealthCheck) {
       serverStatus += " — last checked at " + formatTime(state.lastHealthCheck);
     }
 
@@ -864,22 +799,6 @@ function activate(api) {
               },
             };
           })),
-        },
-        {
-          type: "section",
-          title: "Development",
-          children: [
-            {
-              type: "settings-row",
-              label: "Mock Mode",
-              description: "Use fake data for search, streaming, and downloads. No real TIDAL calls.",
-              control: {
-                type: "toggle",
-                checked: state.mockMode,
-                action: "toggle-mock-mode",
-              },
-            },
-          ],
         },
       ],
     });
@@ -1431,10 +1350,8 @@ function activate(api) {
   // Load saved settings, then start health checks
   Promise.all([
     api.storage.get("streaming_quality"),
-    api.storage.get("mock_mode"),
   ]).then(function (values) {
     if (values[0]) state.streamingQuality = values[0];
-    if (values[1]) state.mockMode = true;
     fetchInstances().then(function () { render(); });
   });
 
@@ -1449,18 +1366,6 @@ function activate(api) {
   api.ui.onAction("open-status-page", function (data) {
     var url = (data && data.url) || UPTIME_URLS[0];
     api.network.openUrl(url);
-  });
-
-  api.ui.onAction("toggle-mock-mode", function (data) {
-    state.mockMode = !!data.value;
-    api.storage.set("mock_mode", state.mockMode);
-    if (state.mockMode) {
-      updateHealthState(true, true);
-    } else {
-      instanceCache = null;
-      fetchInstances();
-    }
-    render();
   });
 
   api.ui.onAction("check-health", function () {
