@@ -205,15 +205,24 @@ implementation).
 - `node:assert/strict` everywhere. One `loadPlugin()` per test; `deactivate()` in
   `t.after` for isolation.
 
-## Flagged finding (do not silently fix)
+## Flagged finding (RESOLVED defensively)
 
-`index.js:260` calls `atob(manifest)` to decode the BTS stream manifest. `atob`
-is **not** in the sandbox global list documented in `DEVELOPING.md` and
-`CLAUDE.md`. Either the host provides `atob` undocumented, or stream resolution
-is silently broken in the real sandbox. The harness provides `atob` (Node 22 has
-it globally) so the decode path is testable, **but this discrepancy must be
-verified against the host** (`outcast1000/viboplr`) — if the host does not expose
-`atob`, the plugin needs its own base64 decode and this is a real production bug.
+The BTS stream-manifest decode originally called `atob(manifest)` directly.
+`atob` is **not** in the sandbox global list documented in `DEVELOPING.md` and
+`CLAUDE.md` — so either the host provides it undocumented, or stream resolution
+was silently broken in the real sandbox (every stream attempt would hit the
+`catch` and return `null`).
+
+Rather than depend on the unknown, the plugin now decodes through a
+`decodeBase64()` helper that uses `atob` as a fast path when present and falls
+back to a self-contained pure-JS base64 decoder otherwise. This removes the
+dependency on a browser global regardless of which case is true. The fallback
+was verified byte-for-byte against `atob` across all padding cases, empty input,
+and `+`/`/` characters.
+
+The harness still provides `atob` so the fast path is exercised; a live test (or
+a sandbox-without-atob unit test) can additionally cover the fallback path. The
+host-sandbox question is now a documentation issue, not a correctness risk.
 
 ## Open questions
 

@@ -8,6 +8,31 @@ function stripRemasterSuffix(s) {
   return s.replace(REMASTER_SUFFIX, "").trim() || s;
 }
 
+// Base64-decode the TIDAL BTS stream manifest. The host's frozen sandbox does
+// not document `atob` as a provided global, so we can't rely on it: use it as
+// the fast path when present, and otherwise fall back to a self-contained
+// decoder. Returns a binary ("Latin-1") string, matching atob semantics — the
+// manifest is ASCII JSON, so the caller can JSON.parse the result directly.
+var B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function decodeBase64(input) {
+  if (typeof atob === "function") return atob(input);
+  var str = String(input).replace(/[\r\n\t ]/g, "").replace(/=+$/, "");
+  var output = "";
+  var bits = 0;
+  var bitCount = 0;
+  for (var i = 0; i < str.length; i++) {
+    var idx = B64_ALPHABET.indexOf(str.charAt(i));
+    if (idx === -1) throw new Error("Invalid base64 character: " + str.charAt(i));
+    bits = (bits << 6) | idx;
+    bitCount += 6;
+    if (bitCount >= 8) {
+      bitCount -= 8;
+      output += String.fromCharCode((bits >> bitCount) & 0xff);
+    }
+  }
+  return output;
+}
+
 function activate(api) {
   var state = {
     currentView: "search",
@@ -257,7 +282,7 @@ function activate(api) {
     var manifestType = data.manifestMimeType || "application/vnd.tidal.bts";
     if (manifestType !== "application/vnd.tidal.bts") return null;
     try {
-      var decoded = atob(manifest);
+      var decoded = decodeBase64(manifest);
       var parsed = JSON.parse(decoded);
       var urls = parsed.urls || [];
       var url = urls[0] || null;
