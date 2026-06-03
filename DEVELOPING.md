@@ -236,6 +236,24 @@ Extensions, open an artist with no image, and watch the DevTools console.
 
 ---
 
+## 7b. Testing
+
+This repo has a zero-dependency Node test harness (`test/`) that loads the real
+`index.js` with a fake `api` bridge and drives the plugin through its registered
+handlers.
+
+- `npm test` — fast, deterministic mocked tests. This is what CI runs.
+- `npm run test:live` — opt-in tests against the real TIDAL mirror network.
+  They **skip** (not fail) when no mirror is reachable, so an upstream outage
+  never looks like a regression. Run these by hand when you suspect the mirrors
+  changed shape or died.
+
+The harness (`test/harness.js`) loads `index.js` in a `node:vm` context with the
+same frozen sandbox globals the host provides — plus `atob` — so tests exercise
+the real code path, not a reimplementation.
+
+---
+
 ## 8. Releasing
 
 See `README.md` → *Develop & Release*. In short: bump the version

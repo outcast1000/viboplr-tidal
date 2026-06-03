@@ -1,0 +1,10 @@
+{
+  "name": "viboplr-tidal",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test harness for the tidal-browse Viboplr plugin",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:live": "TIDAL_LIVE=1 node --test test/live/*.test.js"
+  }
+}

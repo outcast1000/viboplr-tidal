@@ -64,7 +64,8 @@ These are the exact shapes the harness must satisfy and the tests assert on. Do 
 ## File Structure
 
 - Create: `package.json` — scripts only, no deps.
-- Create: `test/harness.js` — `loadPlugin()`, fake `api`, handler capture, effect recording, driver helpers.
+- Create: `test/harness.js` — `loadPlugin()`, fake `api`, handler capture, effect recording, driver helpers, `plain()`.
+- Create: `test/helpers.js` — shared test fixtures/stubs: `fixture()`, `upStubs()`, `searchStubs()`. (Extracted after the per-task implementation to remove byte-identical duplication across the suites; the individual task steps below show these helpers inline — in the shipped code they live in `test/helpers.js` and are imported.)
 - Create: `test/fixtures/search-tracks.json`, `search-artists.json`, `search-albums.json`, `stream-manifest.json`.
 - Create: `test/lifecycle.test.js`, `test/search.test.js`, `test/stream-resolve.test.js`, `test/download.test.js`, `test/instances.test.js`.
 - Create: `test/live/smoke.live.test.js` — opt-in live tier.
@@ -86,8 +87,8 @@ These are the exact shapes the harness must satisfy and the tests assert on. Do 
   "private": true,
   "description": "Test harness for the tidal-browse Viboplr plugin",
   "scripts": {
-    "test": "node --test test/",
-    "test:live": "TIDAL_LIVE=1 node --test test/live/"
+    "test": "node --test test/*.test.js",
+    "test:live": "TIDAL_LIVE=1 node --test test/live/*.test.js"
   }
 }
 ```
@@ -130,9 +131,11 @@ test("loadPlugin returns activate/deactivate and registers core resolvers", asyn
   assert.ok(h.has.streamResolveFallback, "onStreamResolve('tidal-fallback') registered");
   assert.ok(h.has.resolveByUri, "downloads.onResolveByUri registered");
   assert.ok(h.has.resolveByMetadata, "downloads.onResolveByMetadata registered");
-  // It renders an initial view for "tidal":
+  // It renders the main "tidal" view during activate(). Note render() always
+  // calls renderSettings() last, so the LAST view is "tidal-settings"; assert
+  // presence of a "tidal" view rather than that it is last.
   assert.ok(h.views.length >= 1, "at least one setViewData call");
-  assert.equal(h.views[h.views.length - 1].viewId, "tidal");
+  assert.ok(h.views.some((v) => v.viewId === "tidal"), "rendered the tidal view");
 });
 
 test("deactivate clears the health-check interval", async () => {
@@ -163,6 +166,17 @@ function makeThrowingFetch(label) {
   return async function (url) {
     throw new Error(label + ": unstubbed network.fetch for " + url);
   };
+}
+
+// Re-root a value into the test realm. The plugin runs in a vm context with
+// its OWN intrinsics, so arrays/objects it returns are not `instanceof` the
+// test realm's Array/Object — `assert.deepEqual` (strict) compares prototypes
+// and fails on that mismatch even when the data is identical. A JSON round-trip
+// rebuilds the value using the test realm's intrinsics. Use this when deep-
+// comparing plugin-returned structured data (arrays/objects); not needed for
+// primitive (`assert.equal`) comparisons.
+function plain(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 // A minimal Response-like for the fake bridge.
@@ -317,7 +331,9 @@ function loadPlugin(opts) {
     // network stub control
     stubFetch(map) {
       fetchImpl = async function (url) {
-        const keys = Object.keys(map);
+        // Match the most specific (longest) key first so an overlapping
+        // shorter pattern can't shadow a more specific one.
+        const keys = Object.keys(map).sort(function (a, b) { return b.length - a.length; });
         for (let i = 0; i < keys.length; i++) {
           if (url.indexOf(keys[i]) !== -1) {
             const entry = map[keys[i]];
@@ -337,7 +353,7 @@ function loadPlugin(opts) {
   };
 }
 
-module.exports = { loadPlugin: loadPlugin, makeResponse: makeResponse };
+module.exports = { loadPlugin: loadPlugin, makeResponse: makeResponse, plain: plain };
 ```
 
 > Note: the harness injects `setInterval`/`clearInterval` into the plugin's frozen sandbox, so the plugin's `_healthCheckInterval` uses the fakes. It does NOT patch Node's globals. `liveIntervals` reflects the plugin's interval lifecycle.
@@ -443,6 +459,17 @@ function fixture(name) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8"));
 }
 
+// Read the tabs node's counts from a rendered search-view payload. Each tab's
+// `count` is the number of parsed results in that category (omitted/undefined
+// when zero). This is the meaningful signal that a category parsed, since
+// renderSearchView only renders the *active* tab's items inline.
+function tabCounts(payload) {
+  const tabs = payload.children.find((c) => c.type === "tabs");
+  const out = {};
+  tabs.tabs.forEach((tb) => { out[tb.id] = tb.count; });
+  return out;
+}
+
 // Stub map that brings instances "up" and answers searches with fixtures.
 function searchStubs() {
   return {
@@ -474,10 +501,12 @@ test("search renders parsed tracks/artists/albums", async (t) => {
 
   const lastTidalView = [...h.views].reverse().find((v) => v.viewId === "tidal");
   assert.ok(lastTidalView, "rendered a tidal view");
-  // Find the track-row-list inside the rendered payload children.
+  // The active (tracks) tab renders its items inline, so the track title shows.
   const json = JSON.stringify(lastTidalView.payload);
   assert.match(json, /Test Song/);
-  assert.match(json, /Test Artist/);
+  // All three categories parsed — proven by their tab counts (the inactive
+  // album/artist tabs don't render items, but their counts reflect the parse).
+  assert.deepEqual(tabCounts(lastTidalView.payload), { tracks: 1, albums: 1, artists: 1 });
 });
 
 test("search degrades gracefully when one search request fails", async (t) => {
@@ -507,8 +536,21 @@ test("search degrades gracefully when one search request fails", async (t) => {
   const json = JSON.stringify(lastTidalView.payload);
   // Tracks still render even though artist search failed.
   assert.match(json, /Test Song/);
+  // Graceful degradation: tracks and albums still parsed, but the failed
+  // artist search yields no artist results (count omitted), rather than the
+  // whole search throwing or rendering nothing.
+  const counts = tabCounts(lastTidalView.payload);
+  assert.equal(counts.tracks, 1, "tracks survived the artist-search failure");
+  assert.equal(counts.albums, 1, "albums survived the artist-search failure");
+  assert.ok(!counts.artists, "failed artist search yields no artist results");
 });
 ```
+
+> Note on assertions: the inactive album/artist tabs don't render their items
+> inline (only the active tracks tab does), and "Test Artist"/"Test Album"
+> appear in every track row's subtitle regardless — so substring matching can't
+> prove a category parsed. The tab `count` is the reliable signal, hence the
+> `tabCounts()` helper.
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -625,12 +667,14 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { loadPlugin } = require("./harness.js");
+const { loadPlugin, plain } = require("./harness.js");
 
 function fixture(name) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8"));
 }
 
+// Stub map that brings instances "up" (uptime + api/streaming probes), with
+// optional `extra` mappings (e.g. a specific /track/?id=... manifest).
 function upStubs(extra) {
   return Object.assign({
     "tidal-uptime": { body: { api: [{ url: "https://api.test", version: "9" }], streaming: [{ url: "https://api.test", version: "9" }] }, status: 200 },
@@ -643,7 +687,9 @@ test("onGetQualities returns aac then flac", async (t) => {
   const h = loadPlugin();
   t.after(() => h.deactivate());
   const qualities = h.getQualities();
-  assert.deepEqual(qualities.map((q) => q.value), ["aac", "flac"]);
+  // plain() re-roots the plugin's vm-realm array into the test realm so
+  // deepEqual's prototype check passes (see harness.js plain()).
+  assert.deepEqual(plain(qualities).map((q) => q.value), ["aac", "flac"]);
 });
 
 test("resolveByUri returns m4a ext when manifest container is mp4 even for flac format", async (t) => {
@@ -715,7 +761,7 @@ git commit -m "test: cover download resolvers + extension/container logic"
 ```js
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { loadPlugin } = require("./harness.js");
+const { loadPlugin, plain } = require("./harness.js");
 
 test("all uptime URLs failing falls back and probing finds no instances → degraded badge", async (t) => {
   const h = loadPlugin();
@@ -729,7 +775,9 @@ test("all uptime URLs failing falls back and probing finds no instances → degr
   // With no reachable instance, health is degraded → error badge set on "tidal".
   const lastBadge = h.badges[h.badges.length - 1];
   assert.ok(lastBadge, "a badge call happened");
-  assert.deepEqual(lastBadge.badge, { type: "dot", variant: "error" });
+  // plain() re-roots the plugin's vm-realm object into the test realm so
+  // deepEqual's prototype check passes (see harness.js plain()).
+  assert.deepEqual(plain(lastBadge.badge), { type: "dot", variant: "error" });
 });
 
 test("reachable api+streaming instances → badge cleared (healthy)", async (t) => {
@@ -796,16 +844,22 @@ async function realFetch(url) {
   };
 }
 
+// Wait long enough for the plugin's fire-and-forget health check (uptime fetch
+// + probing many mirrors) to settle against the real network. h.settle()'s
+// ~20ms is for synchronous stubs; real round-trips need seconds.
+function waitForHealth() {
+  return new Promise((r) => setTimeout(r, 8000));
+}
+
 test("live: at least one TIDAL mirror is reachable, search parses", { skip: !LIVE && "set TIDAL_LIVE=1 to run" }, async (t) => {
   const h = loadPlugin({ fetch: realFetch });
   t.after(() => h.deactivate());
 
   h.action("check-health");
-  await h.settle();
-  // Inspect health via a search; if no instances, the search will render an
-  // error/banner. Probe reachability by attempting a known-stable search.
-  await h.action("search", { query: "daft punk" });
-  await new Promise((r) => setTimeout(r, 4000)); // allow network round-trips
+  await waitForHealth();
+  // Probe reachability by attempting a known-stable search.
+  h.action("search", { query: "daft punk" });
+  await new Promise((r) => setTimeout(r, 6000)); // allow search round-trips
 
   const lastTidalView = [...h.views].reverse().find((v) => v.viewId === "tidal");
   const json = JSON.stringify(lastTidalView.payload);
@@ -824,8 +878,7 @@ test("live: a known track id resolves to a non-empty stream url", { skip: !LIVE 
   const h = loadPlugin({ fetch: realFetch });
   t.after(() => h.deactivate());
   h.action("check-health");
-  await h.settle();
-  await new Promise((r) => setTimeout(r, 2000));
+  await waitForHealth();
 
   let url;
   try {
@@ -846,9 +899,15 @@ test("live: a known track id resolves to a non-empty stream url", { skip: !LIVE 
 - [ ] **Step 2: Verify the suite SKIPS by default**
 
 Run: `npm test`
-Expected: live tests do not run (they live under `test/live/`, and `npm test` targets `test/` non-recursively for `.test.js` — confirm. If `node --test test/` recurses into `test/live/`, the `skip` guard still makes them skip without `TIDAL_LIVE`). Net: no live network call during `npm test`.
+Expected: live tests do not run. `npm test` is `node --test test/*.test.js`, and
+the glob `test/*.test.js` does NOT descend into `test/live/`, so the live file is
+never even loaded during `npm test`. (Belt and suspenders: the `skip: !LIVE`
+guard would also prevent any network access even if it were loaded.)
 
-> If `node --test test/` recurses and you want hard isolation, the `skip: !LIVE && "..."` guard already prevents network access. Acceptable either way.
+> Why a glob, not `node --test test/`: in Node 22, `node --test test/` is
+> interpreted as a *module path* to load (fails with MODULE_NOT_FOUND), not a
+> directory to scan. The `test/*.test.js` glob is the reliable invocation and
+> conveniently excludes `test/live/`.
 
 - [ ] **Step 3: Optionally run live locally**
 
@@ -894,7 +953,7 @@ jobs:
         run: npm test
 ```
 
-> No `npm install` step is needed — there are no dependencies. `npm test` runs `node --test test/`. The live suite is never invoked in CI (no `TIDAL_LIVE`).
+> No `npm install` step is needed — there are no dependencies. `npm test` runs `node --test test/*.test.js`. The live suite is never invoked in CI (no `TIDAL_LIVE`, and the glob excludes `test/live/`).
 
 - [ ] **Step 2: Validate the workflow YAML locally**
 

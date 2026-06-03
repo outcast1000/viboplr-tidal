@@ -1,0 +1,14 @@
+{
+  "data": {
+    "items": [
+      {
+        "id": 1001,
+        "title": "Test Song",
+        "duration": 210,
+        "trackNumber": 3,
+        "artist": { "id": 50, "name": "Test Artist" },
+        "album": { "id": 900, "title": "Test Album", "cover": "aaaa-bbbb-cccc" }
+      }
+    ]
+  }
+}

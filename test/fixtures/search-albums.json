@@ -1,0 +1,1 @@
+{ "data": { "albums": { "items": [ { "id": 900, "title": "Test Album", "cover": "aaaa-bbbb-cccc", "releaseDate": "2019-05-10", "artists": [ { "id": 50, "name": "Test Artist" } ] } ] } } }
