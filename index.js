@@ -53,8 +53,6 @@ function activate(api) {
 
   var UPTIME_URLS = [
     "https://tidal-uptime.geeked.wtf",
-    "https://tidal-uptime.jiffy-puffs-1j.workers.dev/",
-    "https://tidal-uptime.props-76styles.workers.dev/",
   ];
   var CACHE_TTL_MS = 900000; // 15 minutes
   var API_PROBE_PATH = "/search/?s=test&limit=1";
@@ -70,11 +68,11 @@ function activate(api) {
       { url: "https://us-west.monochrome.tf", version: "2.7" },
       { url: "https://api.monochrome.tf", version: "2.5" },
       { url: "https://monochrome-api.samidy.com", version: "2.3" },
+      { url: "https://tidal.kinoplus.online", version: "2.2" },
       { url: "https://maus.qqdl.site", version: "2.6" },
       { url: "https://vogel.qqdl.site", version: "2.6" },
       { url: "https://katze.qqdl.site", version: "2.6" },
       { url: "https://hund.qqdl.site", version: "2.6" },
-      { url: "https://tidal.kinoplus.online", version: "2.2" },
       { url: "https://wolf.qqdl.site", version: "2.2" },
     ],
     streaming: [
