@@ -13,8 +13,15 @@ auto-updates if already installed (the app checks `updateUrl` every 24h).
 
 ## Develop & Release
 
-For every release: edit `index.js` / `manifest.json`, **bump `version` in
-`manifest.json`**, and add a `## vX.Y.Z` section at the top of `CHANGELOG.md`.
+For every release:
+
+1. **Refresh the TIDAL server list:** run `npm run update-instances` and commit
+   any resulting change to `index.js` (it rewrites the hardcoded
+   `FALLBACK_INSTANCES` / `UPTIME_URLS` from upstream, or reports "No changes").
+   See `DEVELOPING.md` → *Updating the TIDAL server list*.
+2. Edit `index.js` / `manifest.json` as needed, **bump `version` in
+   `manifest.json`**, and add a `## vX.Y.Z` section at the top of `CHANGELOG.md`.
+
 Then publish via CI (preferred) or manually.
 
 ### Release via CI (preferred)
