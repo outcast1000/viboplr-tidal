@@ -254,6 +254,28 @@ the real code path, not a reimplementation.
 
 ---
 
+## 7c. Updating the TIDAL server list
+
+TIDAL streaming instances go offline and get replaced over time. The plugin
+fetches a live list at runtime, but it also ships a hardcoded fallback
+(`FALLBACK_INSTANCES`) and the status-tracker endpoints (`UPTIME_URLS`) in
+`index.js`. When those go stale, refresh them from upstream:
+
+```bash
+npm run update-instances
+```
+
+This merges three sources — the Monochrome web bundle (canonical), the
+`tidal-uptime.geeked.wtf` status API, and the project's `INSTANCES.md` — dedupes
+them, and rewrites the two blocks in `index.js`. It then prints a `git diff` and
+**does not commit**. Review the diff, then commit and bump the version per the
+release flow below.
+
+If the canonical bundle is unreachable the script aborts without touching
+`index.js`; the other two sources are best-effort and only contribute extra URLs.
+
+---
+
 ## 8. Releasing
 
 See `README.md` → *Develop & Release*. In short: bump the version

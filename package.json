@@ -5,6 +5,7 @@
   "description": "Test harness for the tidal-browse Viboplr plugin",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:live": "TIDAL_LIVE=1 node --test test/live/*.test.js"
+    "test:live": "TIDAL_LIVE=1 node --test test/live/*.test.js",
+    "update-instances": "node scripts/update-instances.js"
   }
 }
