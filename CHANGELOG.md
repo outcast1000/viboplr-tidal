@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.3
+- Refreshed the built-in TIDAL server list from upstream: dropped two dead
+  status-tracker endpoints and reprioritized the fallback instances, so the
+  plugin spends fewer probes on unreachable servers when the live list is down.
+
 ## v1.2.2
 - Stream manifest decoding no longer depends on a browser `atob` global: it uses
   a self-contained base64 decoder as a fallback, so streaming and downloads work
