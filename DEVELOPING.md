@@ -278,6 +278,30 @@ If the canonical bundle is unreachable the script aborts without touching
 
 ---
 
+## 7d. Checking server status
+
+When the in-app banner says streaming (or search) is unavailable and you want to
+know *why*, probe every server the plugin could use:
+
+```bash
+npm run server-status
+```
+
+It prints three sections — **SYNC** (uptime URLs), **SEARCH** (api instances),
+and **STREAMING** (streaming instances) — with one line per server classifying
+it as `UP`, `HTTP <code>` (e.g. 502/403), `TIMEOUT`, `CONN-FAILED`,
+`PROXY-SPLASH` (a captive-portal/HTML page intercepting the request — common on
+corporate networks), or `UPSTREAM-ERROR` (the mirror answered but its own
+upstream TIDAL backend failed, e.g. `{"detail":"Upstream API error"}`). The
+`UPSTREAM-ERROR` verdict is the tell that the servers are fine but TIDAL's
+backend is down — not something a server-list refresh can fix.
+
+The server list is fetched live from upstream (merged with the built-in
+fallback), so it reflects what the plugin actually sees. The script is read-only
+and always exits 0.
+
+---
+
 ## 8. Releasing
 
 See `README.md` → *Develop & Release*. In short: bump the version
