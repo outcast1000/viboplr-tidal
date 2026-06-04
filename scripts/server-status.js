@@ -2,10 +2,10 @@
 
 // Maintainer diagnostic: probe every TIDAL server the plugin could use — sync
 // (uptime URLs), search (api instances), and streaming (streaming instances) —
-// and print a grouped table classifying each as UP / TIMEOUT / CONN-FAILED /
-// PROXY-SPLASH / UPSTREAM-ERROR / HTTP <code>. Pure logic is exported for unit
-// tests; the CLI runs only when invoked directly. Always exits 0 (it is a
-// report, not a gate).
+// plus extra diagnostic mirrors. Prints a grouped table classifying each as
+// UP / TIMEOUT / CONN-FAILED / PROXY-SPLASH / UPSTREAM-ERROR / HTTP <code>.
+// Pure logic is exported for unit tests; the CLI runs only when invoked
+// directly. Always exits 0 (it is a report, not a gate).
 
 const updater = require("./update-instances.js");
 
@@ -110,6 +110,64 @@ const UPTIME_URLS = [
   "https://tidal-uptime.geeked.wtf",
 ];
 
+// Maintainer-only diagnostic additions. These do not change plugin runtime
+// behavior; they make `npm run server-status` probe known mirrors even when an
+// upstream source omits them. Env vars can add one-off servers locally:
+// TIDAL_STATUS_CUSTOM_URLS applies to both api and streaming, while
+// TIDAL_STATUS_CUSTOM_API_URLS / TIDAL_STATUS_CUSTOM_STREAMING_URLS are scoped.
+const CUSTOM_INSTANCES = {
+  api: [
+    { url: "https://hifi.geeked.wtf", version: "2.7" },
+    { url: "https://eu-central.monochrome.tf", version: "2.7" },
+    { url: "https://us-west.monochrome.tf", version: "2.7" },
+    { url: "https://api.monochrome.tf", version: "2.5" },
+    { url: "https://monochrome-api.samidy.com", version: "2.3" },
+    { url: "https://tidal.kinoplus.online", version: "2.2" },
+    { url: "https://maus.qqdl.site", version: "2.6" },
+    { url: "https://vogel.qqdl.site", version: "2.6" },
+    { url: "https://katze.qqdl.site", version: "2.6" },
+    { url: "https://hund.qqdl.site", version: "2.6" },
+    { url: "https://wolf.qqdl.site", version: "2.2" },
+    { url: "https://hifi-api.kennyy.com.br/", version: "2.1" },
+  ],
+  streaming: [
+    { url: "https://hifi.geeked.wtf", version: "2.7" },
+    { url: "https://maus.qqdl.site", version: "2.6" },
+    { url: "https://vogel.qqdl.site", version: "2.6" },
+    { url: "https://katze.qqdl.site", version: "2.6" },
+    { url: "https://hund.qqdl.site", version: "2.6" },
+    { url: "https://wolf.qqdl.site", version: "2.6" },
+  ],
+  uptimeUrls: [],
+};
+
+function splitServerList(value) {
+  if (!value || typeof value !== "string") return [];
+  return value.split(/[\s,]+/).filter(Boolean);
+}
+
+function envCustomInstances(env) {
+  env = env || {};
+  const both = splitServerList(env.TIDAL_STATUS_CUSTOM_URLS);
+  return {
+    api: both.concat(splitServerList(env.TIDAL_STATUS_CUSTOM_API_URLS)),
+    streaming: both.concat(splitServerList(env.TIDAL_STATUS_CUSTOM_STREAMING_URLS)),
+    uptimeUrls: [],
+  };
+}
+
+function mergeServerSources(bundle, uptimeSources, customSource) {
+  const sources = [bundle || { api: [], streaming: [], uptimeUrls: [] }]
+    .concat(uptimeSources || [])
+    .concat([CUSTOM_INSTANCES, customSource || { api: [], streaming: [], uptimeUrls: [] }]);
+  const merged = updater.mergeSources(sources);
+  return {
+    uptimeUrls: merged.uptimeUrls.length ? merged.uptimeUrls : UPTIME_URLS.slice(),
+    apiUrls: merged.api.map(function (e) { return e.url; }),
+    streamingUrls: merged.streaming.map(function (e) { return e.url; }),
+  };
+}
+
 // -- Networked probing (thin I/O; not unit-tested) --
 
 async function fetchText(url, pathSuffix) {
@@ -138,34 +196,34 @@ async function probeCategory(category, urls, pathSuffix) {
   }));
 }
 
-// Build the server lists the plugin would see: live bundle + uptime, merged
-// with the bundle's own fallback. Falls back to the hardcoded mirror on failure.
+// Build the server lists the plugin would see: live bundle + every uptime URL,
+// merged with custom diagnostic servers. Falls back to the custom list on
+// failure.
 async function buildServerLists() {
-  let uptimeUrls = UPTIME_URLS.slice();
-  let apiUrls = [];
-  let streamingUrls = [];
+  const envCustom = envCustomInstances(process.env);
   try {
     const home = await fetchText("https://monochrome.tf/", "");
     const m = (home.bodyText || "").match(/assets\/index-[A-Za-z0-9_-]+\.js/);
     if (!m) throw new Error("no asset bundle link found");
     const bundleResp = await fetchText("https://monochrome.tf/" + m[0], "");
     const bundle = updater.parseBundleInstances(bundleResp.bodyText || "");
-    let uptime = { api: [], streaming: [], uptimeUrls: [] };
-    try {
-      const upResp = await fetchText("https://tidal-uptime.geeked.wtf", "");
-      uptime = updater.parseUptimeJson(JSON.parse(upResp.bodyText || "{}"));
-    } catch (e) { /* best-effort */ }
-    const merged = updater.mergeSources([bundle, uptime]);
-    apiUrls = merged.api.map(function (e) { return e.url; });
-    streamingUrls = merged.streaming.map(function (e) { return e.url; });
-    if (bundle.uptimeUrls && bundle.uptimeUrls.length) uptimeUrls = bundle.uptimeUrls;
-    if (apiUrls.length === 0) throw new Error("bundle yielded no instances");
+    const uptimeUrls = bundle.uptimeUrls && bundle.uptimeUrls.length ? bundle.uptimeUrls : UPTIME_URLS;
+    const uptimeSources = await Promise.all(uptimeUrls.map(async function (url) {
+      try {
+        const upResp = await fetchText(url, "");
+        return updater.parseUptimeJson(JSON.parse(upResp.bodyText || "{}"));
+      } catch (e) {
+        console.warn("warn: uptime source failed (" + url + "): " + e.message);
+        return { api: [], streaming: [], uptimeUrls: [] };
+      }
+    }));
+    const lists = mergeServerSources(bundle, uptimeSources, envCustom);
+    if (lists.apiUrls.length === 0) throw new Error("bundle yielded no instances");
+    return lists;
   } catch (e) {
-    console.warn("warn: live upstream fetch failed (" + e.message + ") — using hardcoded fallback list only");
-    apiUrls = ["https://hifi.geeked.wtf", "https://api.monochrome.tf", "https://monochrome-api.samidy.com"];
-    streamingUrls = ["https://hifi.geeked.wtf"];
+    console.warn("warn: live upstream fetch failed (" + e.message + ") — using custom fallback list only");
+    return mergeServerSources(null, [], envCustom);
   }
-  return { uptimeUrls: uptimeUrls, apiUrls: apiUrls, streamingUrls: streamingUrls };
 }
 
 // -- CLI --
@@ -201,4 +259,7 @@ module.exports = {
   describeDetail: describeDetail,
   formatRow: formatRow,
   formatTable: formatTable,
+  splitServerList: splitServerList,
+  envCustomInstances: envCustomInstances,
+  mergeServerSources: mergeServerSources,
 };

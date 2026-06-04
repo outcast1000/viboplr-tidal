@@ -117,3 +117,53 @@ test("describeDetail: upstream/http show a whitespace-collapsed body snippet", (
   assert.equal(s.describeDetail("UPSTREAM-ERROR", { status: 403, bodyText: '{"detail":"Upstream API error"}' }), '{"detail":"Upstream API error"}');
   assert.equal(s.describeDetail("HTTP 502", { status: 502, bodyText: "bad   gateway\n" }), "bad gateway");
 });
+
+test("splitServerList accepts comma and whitespace separated custom URLs", () => {
+  assert.deepEqual(s.splitServerList(" https://a.test,https://b.test\nhttps://c.test "), [
+    "https://a.test",
+    "https://b.test",
+    "https://c.test",
+  ]);
+  assert.deepEqual(s.splitServerList(""), []);
+  assert.deepEqual(s.splitServerList(null), []);
+});
+
+test("envCustomInstances supports shared and scoped custom servers", () => {
+  const custom = s.envCustomInstances({
+    TIDAL_STATUS_CUSTOM_URLS: "https://both.test",
+    TIDAL_STATUS_CUSTOM_API_URLS: "https://api-only.test",
+    TIDAL_STATUS_CUSTOM_STREAMING_URLS: "https://stream-only.test",
+  });
+  assert.deepEqual(custom.api, ["https://both.test", "https://api-only.test"]);
+  assert.deepEqual(custom.streaming, ["https://both.test", "https://stream-only.test"]);
+  assert.deepEqual(custom.uptimeUrls, []);
+});
+
+test("mergeServerSources includes uptime-discovered and custom servers with dedupe", () => {
+  const lists = s.mergeServerSources(
+    {
+      api: [{ url: "https://bundle-api.test", version: "1" }],
+      streaming: [{ url: "https://bundle-stream.test", version: "1" }],
+      uptimeUrls: ["https://uptime-a.test", "https://uptime-a.test/"],
+    },
+    [{
+      api: ["https://uptime-api.test", "https://bundle-api.test/"],
+      streaming: ["https://uptime-stream.test"],
+      uptimeUrls: [],
+    }],
+    {
+      api: ["https://custom-api.test"],
+      streaming: ["https://custom-stream.test"],
+      uptimeUrls: [],
+    }
+  );
+
+  assert.deepEqual(lists.uptimeUrls, ["https://uptime-a.test"]);
+  assert.ok(lists.apiUrls.includes("https://bundle-api.test"));
+  assert.ok(lists.apiUrls.includes("https://uptime-api.test"));
+  assert.ok(lists.apiUrls.includes("https://custom-api.test"));
+  assert.equal(lists.apiUrls.filter((url) => url === "https://bundle-api.test").length, 1);
+  assert.ok(lists.streamingUrls.includes("https://bundle-stream.test"));
+  assert.ok(lists.streamingUrls.includes("https://uptime-stream.test"));
+  assert.ok(lists.streamingUrls.includes("https://custom-stream.test"));
+});

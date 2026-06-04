@@ -296,9 +296,13 @@ upstream TIDAL backend failed, e.g. `{"detail":"Upstream API error"}`). The
 `UPSTREAM-ERROR` verdict is the tell that the servers are fine but TIDAL's
 backend is down — not something a server-list refresh can fix.
 
-The server list is fetched live from upstream (merged with the built-in
-fallback), so it reflects what the plugin actually sees. The script is read-only
-and always exits 0.
+The server list is fetched live from upstream, including every status endpoint in
+`UPTIME_URLS`, then merged with known diagnostic mirrors, so it reflects what the
+plugin actually sees plus a few maintainer-only checks. To probe temporary local
+servers too, set `TIDAL_STATUS_CUSTOM_URLS` for both search and streaming, or
+`TIDAL_STATUS_CUSTOM_API_URLS` / `TIDAL_STATUS_CUSTOM_STREAMING_URLS` for scoped
+checks. Values can be comma or whitespace separated. The script is read-only and
+always exits 0.
 
 ---
 
