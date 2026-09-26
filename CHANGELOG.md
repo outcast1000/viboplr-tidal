@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.4
+- **Menu items no longer carry a "TIDAL:" prefix of their own** ("Search",
+  "Play", "Download"). Apps that prefix plugin menu items with the plugin name
+  show them as "TIDAL: Search" etc.; older apps show the bare labels.
+
 ## v1.2.3
 - Refreshed the built-in TIDAL server list from upstream: dropped two dead
   status-tracker endpoints and reprioritized the fallback instances, so the
