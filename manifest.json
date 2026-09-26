@@ -29,7 +29,7 @@
     "contextMenuItems": [
       {
         "id": "search-tidal",
-        "label": "TIDAL: Search",
+        "label": "Search",
         "targets": [
           "track",
           "album",
@@ -38,7 +38,7 @@
       },
       {
         "id": "play-from-tidal",
-        "label": "TIDAL: Play",
+        "label": "Play",
         "targets": [
           "track",
           "album"
@@ -46,7 +46,7 @@
       },
       {
         "id": "download-playlist-from-tidal",
-        "label": "TIDAL: Download",
+        "label": "Download",
         "targets": [
           "playlist"
         ]
