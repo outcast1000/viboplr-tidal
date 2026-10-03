@@ -55,3 +55,27 @@ test("resolveByMetadata searches then resolves first track's stream", async (t) 
   assert.equal(result.metadata.title, "Test Song");
   assert.equal(result.metadata.artist, "Test Artist");
 });
+
+test("download-playlist-from-tidal matches each track and opens the download modal once", async (t) => {
+  const h = loadPlugin();
+  t.after(() => h.deactivate());
+  h.stubFetch(upStubs({
+    "/search/?s=": { body: fixture("search-tracks.json"), status: 200 },
+  }));
+  h.action("check-health");
+  await h.settle();
+
+  h.contextAction("download-playlist-from-tidal", {
+    kind: "playlist",
+    playlistName: "Mix",
+    tracks: [{ title: "Test Song", artistName: "Test Artist" }],
+  });
+  await h.settle();
+
+  const req = h.requests.find((r) => r.name === "download-tracks");
+  assert.ok(req, "requested the host download modal");
+  assert.equal(req.data.providerId, "tidal-browse:tidal-download");
+  assert.equal(req.data.tracks.length, 1);
+  assert.match(req.data.tracks[0].uri, /^tidal:\/\/\d+$/);
+  assert.equal(h.downloads.length, 0, "never touches the removed background queue");
+});

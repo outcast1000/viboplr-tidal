@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.0
+- **Runs in the plugin worker runtime.** It now gets only what it asks for
+  — `network:*`, `system:open`, `playback:control`, `library:read` — and can't reach anything else in the app. Viboplr asks
+  you to allow these once when you update. Requires Viboplr 1.0.85.
+- **Fixed: "Download playlist from TIDAL" did nothing.** It called the host's
+  background download queue, which no longer exists. It now matches the
+  playlist's tracks on TIDAL and opens the standard download modal with them,
+  saying how many weren't found.
+- `network:*` because the list of TIDAL API instances is fetched at runtime
+  and changes without a plugin release.
+
 ## v1.2.4
 - **Menu items no longer carry a "TIDAL:" prefix of their own** ("Search",
   "Play", "Download"). Apps that prefix plugin menu items with the plugin name

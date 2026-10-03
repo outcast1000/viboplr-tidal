@@ -457,14 +457,6 @@ function activate(api) {
     };
   }
 
-  function downloadTidalTrack(trackId) {
-    return api.downloads.enqueue({
-      title: "TIDAL track",
-      uri: "tidal://" + trackId,
-      provider: "tidal-browse:tidal-download",
-    });
-  }
-
   function formatDuration(secs) {
     if (!secs) return "";
     var m = Math.floor(secs / 60);
@@ -1199,16 +1191,42 @@ function activate(api) {
       api.ui.showNotification((label || "Playlist") + " is empty");
       return;
     }
-    api.ui.showNotification("Queueing TIDAL downloads for " + tracks.length + " track" + (tracks.length > 1 ? "s" : ""));
-    tracks.forEach(function (t) {
-      var query = ((t.title || "") + " " + (t.artistName || "")).trim();
-      if (!query) return;
-      tidalSearch(query, 1).then(function (results) {
+    // Match every track on TIDAL first, then hand the matches to the host's
+    // download modal in one go — the same route "download-selected" takes. The
+    // host's background download queue (api.downloads.enqueue) this used to
+    // call was removed, so the item had been failing silently.
+    api.ui.showNotification("Finding " + tracks.length + " track" + (tracks.length > 1 ? "s" : "") + " on TIDAL…");
+    Promise.all(tracks.map(function (t) {
+      var query = ((t.title || "") + " " + (t.artistName || t.artist_name || "")).trim();
+      if (!query) return Promise.resolve(null);
+      return tidalSearch(query, 1).then(function (results) {
         var matches = (results && results.tracks) || [];
-        if (matches.length === 0) return;
-        return downloadTidalTrack(matches[0].tidal_id);
+        return matches.length > 0 ? matches[0] : null;
       }).catch(function (err) {
-        console.error("TIDAL playlist download failed for track:", t.title, err);
+        console.error("TIDAL playlist download: search failed for track:", t.title, err);
+        return null;
+      });
+    })).then(function (found) {
+      var hits = found.filter(Boolean);
+      if (hits.length === 0) {
+        api.ui.showNotification("None of the tracks in " + (label || "the playlist") + " were found on TIDAL");
+        return;
+      }
+      if (hits.length < tracks.length) {
+        api.ui.showNotification((tracks.length - hits.length) + " of " + tracks.length + " tracks weren't found on TIDAL");
+      }
+      api.ui.requestAction("download-tracks", {
+        providerId: "tidal-browse:tidal-download",
+        providerName: "TIDAL",
+        tracks: hits.map(function (t) {
+          return {
+            title: t.title,
+            artist_name: t.artist_name || null,
+            album_title: t.album_title || null,
+            uri: "tidal://" + t.tidal_id,
+            durationSecs: t.duration_secs || null,
+          };
+        }),
       });
     });
   }

@@ -89,7 +89,8 @@ function loadPlugin(opts) {
       onResolveStreamByUri(name, cb) { resolvers.streamResolveByUri = cb; },
     },
     downloads: {
-      enqueue(obj) { downloads.push(obj); return Promise.resolve(); },
+      // No `enqueue`: the host removed its background download queue, so a
+      // call to it must fail here exactly as it fails in the app.
       onGetQualities(name, cb) { resolvers.getQualities = cb; },
       onResolveByUri(name, cb) { resolvers.resolveByUri = cb; },
       onResolveByMetadata(name, cb) { resolvers.resolveByMetadata = cb; },
