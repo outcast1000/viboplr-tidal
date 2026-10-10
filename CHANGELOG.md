@@ -1,5 +1,9 @@
 # Changelog
 
+
+## v1.3.1
+- Releases are now signed with the Viboplr plugin-signing key, so Viboplr allows the permissions this plugin asks for without prompting. No functional changes.
+
 ## v1.3.0
 - **Runs in the plugin worker runtime.** It now gets only what it asks for
   — `network:*`, `system:open`, `playback:control`, `library:read` — and can't reach anything else in the app. Viboplr asks
